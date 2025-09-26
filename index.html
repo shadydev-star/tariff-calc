@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>VAT & Duty Calculator (Nigeria)</title>
+  <link rel="stylesheet" href="style.css">
+  <!-- Fuse.js -->
+  <script src="https://cdn.jsdelivr.net/npm/fuse.js@6.6.2"></script>
+</head>
+<body>
+  <h1>VAT & Duty Calculator</h1>
+
+  <label>Product Description:</label><br>
+  <input type="text" id="productInput" placeholder="e.g. laptop, shoes"><br>
+
+  <label>Product Price (₦):</label><br>
+  <input type="number" id="valueInput" placeholder="Enter value"><br>
+
+  <button onclick="searchHS()">Search HS Codes</button>
+
+  <div id="results" class="result"></div>
+  <div id="finalResult" class="result"></div>
+
+  <script>
+    let hsData = [];
+    let fuse;
+
+    // Load HS code JSON file
+    fetch("hs_codes.json")
+      .then(res => res.json())
+      .then(data => {
+        hsData = data;
+
+        // Initialize Fuse.js
+        fuse = new Fuse(hsData, {
+          keys: ["description"],
+          threshold: 0.3
+        });
+
+        console.log("HS data loaded:", hsData.length);
+      });
+
+    function searchHS() {
+      const query = document.getElementById("productInput").value;
+      const value = parseFloat(document.getElementById("valueInput").value);
+      const resultsDiv = document.getElementById("results");
+      const finalDiv = document.getElementById("finalResult");
+
+      resultsDiv.innerHTML = "";
+      finalDiv.innerHTML = "";
+
+      if (!query || isNaN(value)) {
+        resultsDiv.innerHTML = "<p>Please enter product description and value.</p>";
+        return;
+      }
+
+      // Fuzzy search
+      const results = fuse.search(query, { limit: 5 });
+
+      if (results.length === 0) {
+        resultsDiv.innerHTML = "<p>No HS code found for that description.</p>";
+        return;
+      }
+
+      const form = document.createElement("form");
+      form.id = "hsForm";
+
+      results.forEach((result, idx) => {
+        const item = result.item;
+
+        const option = document.createElement("div");
+        option.className = "match";
+        option.innerHTML = `
+          <label>
+            <input type="radio" name="hs_choice" value="${idx}" ${idx === 0 ? "checked" : ""}>
+            <strong>${item.description}</strong><br>
+            HS Code: ${item.hs_code}<br>
+            Duty: ${item.duty_rate || 0}% | VAT: ${item.vat_rate || 0}% 
+            | Levy: ${item.levy || 0}% | Excise: ${item.excise || 0}%
+          </label>
+        `;
+        form.appendChild(option);
+      });
+
+      const confirmBtn = document.createElement("button");
+      confirmBtn.type = "button";
+      confirmBtn.textContent = "Confirm Selection";
+      confirmBtn.onclick = () => calculateFinal(value, results);
+
+      form.appendChild(confirmBtn);
+      resultsDiv.appendChild(form);
+    }
+
+    function calculateFinal(value, results) {
+      const selected = document.querySelector("input[name='hs_choice']:checked");
+      if (!selected) return;
+
+      const item = results[selected.value].item;
+
+      const duty = (item.duty_rate || 0) / 100 * value;
+      const levy = (item.levy || 0) / 100 * value;
+      const excise = (item.excise || 0) / 100 * value;
+      const vat = (item.vat_rate || 0) / 100 * (value + duty + levy + excise);
+      const total = value + duty + levy + excise + vat;
+
+      const finalDiv = document.getElementById("finalResult");
+      finalDiv.innerHTML = `
+        <h3>Final Calculation</h3>
+        <p><strong>${item.description}</strong></p>
+        <p>HS Code: ${item.hs_code}</p>
+        <p>Duty: ₦${duty.toFixed(2)} (${item.duty_rate || 0}%)</p>
+        <p>Levy: ₦${levy.toFixed(2)} (${item.levy || 0}%)</p>
+        <p>Excise: ₦${excise.toFixed(2)} (${item.excise || 0}%)</p>
+        <p>VAT: ₦${vat.toFixed(2)} (${item.vat_rate || 0}%)</p>
+        <hr>
+        <p><strong>Total Landed Cost: ₦${total.toFixed(2)}</strong></p>
+      `;
+    }
+  </script>
+</body>
+</html>
