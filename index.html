@@ -3,20 +3,61 @@
 <head>
   <meta charset="UTF-8">
   <title>VAT & Duty Calculator (Nigeria)</title>
-  <link rel="stylesheet" href="style.css">
+ 
   <!-- Fuse.js -->
   <script src="https://cdn.jsdelivr.net/npm/fuse.js@6.6.2"></script>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    .exchange-box, .result { margin-top: 20px; padding: 10px; border: 1px solid #ccc; border-radius: 8px; }
+    .exchange-box h2 { margin-bottom: 10px; }
+    .highlight { background: yellow; }
+    .match { margin-bottom: 10px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    th, td { border: 1px solid #ccc; padding: 8px; text-align: center; }
+  </style>
 </head>
 <body>
   <h1>VAT & Duty Calculator</h1>
 
-  <label>Product Description:</label><br>
-  <input type="text" id="productInput" placeholder="e.g. laptop, shoes"><br>
+  <!-- Exchange Rate Display -->
+  <div class="exchange-box">
+    <h2>Live Exchange Rates</h2>
+    <table>
+      <tr>
+        <th>Currency</th>
+        <th>₦ per 1 unit</th>
+      </tr>
+      <tr>
+        <td>USD → NGN</td>
+        <td id="usdRate">Loading...</td>
+      </tr>
+      <tr>
+        <td>EUR → NGN</td>
+        <td id="eurRate">Loading...</td>
+      </tr>
+      <tr>
+        <td>GBP → NGN</td>
+        <td id="gbpRate">Loading...</td>
+      </tr>
+    </table>
+    <br>
+    <label for="exchangeRate">Exchange Rate (₦/USD):</label>
+    <input type="number" id="exchangeRate" step="0.01">
+  </div>
 
-  <label>Product Price (₦):</label><br>
-  <input type="number" id="valueInput" placeholder="Enter value"><br>
+  <!-- Product Input -->
+  <div class="input-box">
+    <label>Product Name:</label><br>
+    <input type="text" id="productName" placeholder="e.g. iPhone 15"><br><br>
 
-  <button onclick="searchHS()">Search HS Codes</button>
+    <label>Product Type:</label><br>
+    <input type="text" id="productType" placeholder="e.g. electronics, shoes"><br><br>
+
+    <label>FOB (USD):</label><br>
+    <input type="number" id="fobInput" placeholder="Enter FOB value in USD" step="0.01"><br><br>
+
+    <button onclick="searchHS()">Search HS Codes</button>
+  </div>
 
   <div id="results" class="result"></div>
   <div id="finalResult" class="result"></div>
@@ -25,57 +66,111 @@
     let hsData = [];
     let fuse;
 
+    const API_KEY = "8adc0836fc18b828419ecb78";
+    const apiUrl = `https://v6.exchangerate-api.com/v6/${API_KEY}/latest/USD`;
+
+    // Currency formatter
+    const formatNaira = (num) =>
+      new Intl.NumberFormat("en-NG", {
+        style: "currency",
+        currency: "NGN",
+        minimumFractionDigits: 2
+      }).format(num);
+
     // Load HS code JSON file
     fetch("hs_codes.json")
       .then(res => res.json())
       .then(data => {
         hsData = data;
-
-        // Initialize Fuse.js
         fuse = new Fuse(hsData, {
-          keys: ["description"],
-          threshold: 0.3
+          keys: ["description", "type"],
+          threshold: 0.3,
+          minMatchCharLength: 2,
+          includeMatches: true
         });
-
         console.log("HS data loaded:", hsData.length);
+      })
+      .catch(err => {
+        console.error("Error loading HS codes:", err);
+        document.getElementById("results").innerHTML =
+          "<p style='color:red;'>Failed to load HS data.</p>";
       });
 
+    // Fetch exchange rates
+    fetch(apiUrl)
+      .then(res => res.json())
+      .then(data => {
+        if (data.result !== "success") throw new Error("API error");
+        const rates = data.conversion_rates;
+
+        document.getElementById("usdRate").textContent = rates.NGN.toFixed(2);
+        document.getElementById("eurRate").textContent = (rates.NGN / rates.EUR).toFixed(2);
+        document.getElementById("gbpRate").textContent = (rates.NGN / rates.GBP).toFixed(2);
+
+        document.getElementById("exchangeRate").value = rates.NGN.toFixed(2);
+      })
+      .catch(err => {
+        console.error("Exchange rate API failed:", err);
+        document.getElementById("usdRate").textContent = "N/A";
+        document.getElementById("eurRate").textContent = "N/A";
+        document.getElementById("gbpRate").textContent = "N/A";
+      });
+
+    function highlightMatch(text, matches) {
+      if (!matches) return text;
+      let result = "";
+      let lastIndex = 0;
+      matches.forEach(match => {
+        const [start, end] = match.indices[0];
+        result += text.slice(lastIndex, start);
+        result += `<span class="highlight">${text.slice(start, end + 1)}</span>`;
+        lastIndex = end + 1;
+      });
+      result += text.slice(lastIndex);
+      return result;
+    }
+
     function searchHS() {
-      const query = document.getElementById("productInput").value;
-      const value = parseFloat(document.getElementById("valueInput").value);
+      const productType = document.getElementById("productType").value;
+      const fobUSD = parseFloat(document.getElementById("fobInput").value);
+      const exchangeRate = parseFloat(document.getElementById("exchangeRate").value);
+
       const resultsDiv = document.getElementById("results");
       const finalDiv = document.getElementById("finalResult");
-
       resultsDiv.innerHTML = "";
       finalDiv.innerHTML = "";
 
-      if (!query || isNaN(value)) {
-        resultsDiv.innerHTML = "<p>Please enter product description and value.</p>";
+      if (!productType || isNaN(fobUSD) || isNaN(exchangeRate)) {
+        resultsDiv.innerHTML = "<p style='color:red;'>Please enter product type, FOB (USD), and exchange rate.</p>";
         return;
       }
 
-      // Fuzzy search
-      const results = fuse.search(query, { limit: 5 });
+      const results = fuse.search(productType, { limit: 5 });
 
       if (results.length === 0) {
-        resultsDiv.innerHTML = "<p>No HS code found for that description.</p>";
+        resultsDiv.innerHTML = "<p>No HS code found for that product type.</p>";
         return;
       }
+
+      const cifUSD = fobUSD;
+      const fobNGN = fobUSD * exchangeRate;
+      const cifNGN = cifUSD * exchangeRate;
 
       const form = document.createElement("form");
       form.id = "hsForm";
 
       results.forEach((result, idx) => {
         const item = result.item;
+        const highlightedDesc = highlightMatch(item.description, result.matches);
 
         const option = document.createElement("div");
         option.className = "match";
         option.innerHTML = `
           <label>
             <input type="radio" name="hs_choice" value="${idx}" ${idx === 0 ? "checked" : ""}>
-            <strong>${item.description}</strong><br>
+            <strong>${highlightedDesc}</strong><br>
             HS Code: ${item.hs_code}<br>
-            Duty: ${item.duty_rate || 0}% | VAT: ${item.vat_rate || 0}% 
+            Duty: ${item.duty_rate || 0}% | VAT: ${item.vat_rate || 0}%
             | Levy: ${item.levy || 0}% | Excise: ${item.excise || 0}%
           </label>
         `;
@@ -85,35 +180,46 @@
       const confirmBtn = document.createElement("button");
       confirmBtn.type = "button";
       confirmBtn.textContent = "Confirm Selection";
-      confirmBtn.onclick = () => calculateFinal(value, results);
+      confirmBtn.onclick = () => calculateFinal(fobUSD, cifUSD, fobNGN, cifNGN, exchangeRate, results);
 
       form.appendChild(confirmBtn);
       resultsDiv.appendChild(form);
     }
 
-    function calculateFinal(value, results) {
+    function calculateFinal(fobUSD, cifUSD, fobNGN, cifNGN, exchangeRate, results) {
       const selected = document.querySelector("input[name='hs_choice']:checked");
       if (!selected) return;
 
       const item = results[selected.value].item;
 
-      const duty = (item.duty_rate || 0) / 100 * value;
-      const levy = (item.levy || 0) / 100 * value;
-      const excise = (item.excise || 0) / 100 * value;
-      const vat = (item.vat_rate || 0) / 100 * (value + duty + levy + excise);
-      const total = value + duty + levy + excise + vat;
+      // Apply your given formulas
+      const duty = (item.duty_rate || 0) / 100 * cifNGN;
+      const ciss = 0.01 * cifNGN;
+      const etls = 0.005 * cifNGN;
+      const levy = 0.2 * cifNGN;
+      const surcharge = 0.07 * duty;
+      const vat = 0.075 * (cifNGN + ciss + etls + surcharge);
+
+      const total = cifNGN + duty + ciss + etls + levy + surcharge + vat;
 
       const finalDiv = document.getElementById("finalResult");
       finalDiv.innerHTML = `
         <h3>Final Calculation</h3>
         <p><strong>${item.description}</strong></p>
         <p>HS Code: ${item.hs_code}</p>
-        <p>Duty: ₦${duty.toFixed(2)} (${item.duty_rate || 0}%)</p>
-        <p>Levy: ₦${levy.toFixed(2)} (${item.levy || 0}%)</p>
-        <p>Excise: ₦${excise.toFixed(2)} (${item.excise || 0}%)</p>
-        <p>VAT: ₦${vat.toFixed(2)} (${item.vat_rate || 0}%)</p>
+        <p>FOB (USD): $${fobUSD.toFixed(2)}</p>
+        <p>FOB (NGN): ${formatNaira(fobNGN)}</p>
+        <p>CIF (USD): $${cifUSD.toFixed(2)}</p>
+        <p>CIF (NGN): ${formatNaira(cifNGN)}</p>
         <hr>
-        <p><strong>Total Landed Cost: ₦${total.toFixed(2)}</strong></p>
+        <p>Duty: ${formatNaira(duty)}</p>
+        <p>CISS (1%): ${formatNaira(ciss)}</p>
+        <p>ETLS (0.5%): ${formatNaira(etls)}</p>
+        <p>Levy (20%): ${formatNaira(levy)}</p>
+        <p>Surcharge (7% of Duty): ${formatNaira(surcharge)}</p>
+        <p>VAT (7.5%): ${formatNaira(vat)}</p>
+        <hr>
+        <p><strong>Total Landed Cost: ${formatNaira(total)}</strong></p>
       `;
     }
   </script>
