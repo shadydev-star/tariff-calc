@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <title>VAT & Duty Calculator (Nigeria)</title>
- 
+  
   <!-- Fuse.js -->
   <script src="https://cdn.jsdelivr.net/npm/fuse.js@6.6.2"></script>
   <style>
@@ -14,6 +14,13 @@
     .match { margin-bottom: 10px; }
     table { width: 100%; border-collapse: collapse; margin-top: 10px; }
     th, td { border: 1px solid #ccc; padding: 8px; text-align: center; }
+      #results {
+    max-height: 400px;
+    overflow-y: auto;
+    border: 1px solid #ccc;
+    padding: 10px;
+  }
+
   </style>
 </head>
 <body>
@@ -145,7 +152,7 @@
         return;
       }
 
-      const results = fuse.search(productType, { limit: 5 });
+      const results = fuse.search(productType);
 
       if (results.length === 0) {
         resultsDiv.innerHTML = "<p>No HS code found for that product type.</p>";
@@ -192,15 +199,18 @@
 
       const item = results[selected.value].item;
 
-      // Apply your given formulas
-      const duty = (item.duty_rate || 0) / 100 * cifNGN;
-      const ciss = 0.01 * cifNGN;
-      const etls = 0.005 * cifNGN;
-      const levy = 0.2 * cifNGN;
-      const surcharge = 0.07 * duty;
-      const vat = 0.075 * (cifNGN + ciss + etls + surcharge);
+      // Apply formulas with HS code values
+      const duty = (item.duty_rate || 0) > 0 ? (item.duty_rate / 100) * cifNGN : 0;
+      const ciss = 0.01 * cifNGN; // always 1%
+      const etls = 0.005 * cifNGN; // always 0.5%
+      const levy = (item.levy || 0) > 0 ? (item.levy / 100) * cifNGN : 0;
+      const excise = (item.excise || 0) > 0 ? (item.excise / 100) * cifNGN : 0;
+      const surcharge = duty > 0 ? 0.07 * duty : 0;
+      const vat = (item.vat_rate || 0) > 0
+        ? (item.vat_rate / 100) * (cifNGN + ciss + etls + surcharge)
+        : 0;
 
-      const total = cifNGN + duty + ciss + etls + levy + surcharge + vat;
+      const total = cifNGN + duty + ciss + etls + levy + excise + surcharge + vat;
 
       const finalDiv = document.getElementById("finalResult");
       finalDiv.innerHTML = `
@@ -212,12 +222,13 @@
         <p>CIF (USD): $${cifUSD.toFixed(2)}</p>
         <p>CIF (NGN): ${formatNaira(cifNGN)}</p>
         <hr>
-        <p>Duty: ${formatNaira(duty)}</p>
+        <p>Duty (${item.duty_rate || 0}%): ${formatNaira(duty)}</p>
         <p>CISS (1%): ${formatNaira(ciss)}</p>
         <p>ETLS (0.5%): ${formatNaira(etls)}</p>
-        <p>Levy (20%): ${formatNaira(levy)}</p>
+        <p>Levy (${item.levy || 0}%): ${formatNaira(levy)}</p>
+        <p>Excise (${item.excise || 0}%): ${formatNaira(excise)}</p>
         <p>Surcharge (7% of Duty): ${formatNaira(surcharge)}</p>
-        <p>VAT (7.5%): ${formatNaira(vat)}</p>
+        <p>VAT (${item.vat_rate || 0}%): ${formatNaira(vat)}</p>
         <hr>
         <p><strong>Total Landed Cost: ${formatNaira(total)}</strong></p>
       `;
